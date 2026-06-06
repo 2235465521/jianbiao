@@ -2,8 +2,7 @@ import time
 import sys
 import os
 
-# Add project root to sys.path if run directly
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import _path  # noqa: F401
 
 from broker.mq_client import broker_instance
 from repositories.user_repo import UserRepository
