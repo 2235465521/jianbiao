@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+logs/
+*.log
+scan_filepath_log.txt
+.vscode/
+.idea/
+*.xlsx
+*.xls
+*.csv
+*.sql

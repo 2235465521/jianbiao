@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>标准谱系智能搜索器 - 布局优化版</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="pedigree_db.js"></script>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: "Microsoft YaHei", sans-serif;
+        background-color: #f7f9fc;
+      }
+      .search-bar {
+        position: absolute;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 100;
+        background: white;
+        padding: 15px 25px;
+        border-radius: 50px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      input {
+        width: 350px;
+        padding: 10px 15px;
+        border: 1px solid #ddd;
+        border-radius: 25px;
+        outline: none;
+        font-size: 14px;
+      }
+      button {
+        padding: 10px 25px;
+        background: #1890ff;
+        color: white;
+        border: none;
+        border-radius: 25px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: 0.3s;
+      }
+      button:hover {
+        background: #40a9ff;
+      }
+      #main {
+        width: 100vw;
+        height: 100vh;
+      }
+      .controls {
+        position: absolute;
+        bottom: 30px;
+        right: 30px;
+        z-index: 100;
+      }
+      .info {
+        position: absolute;
+        top: 100px;
+        left: 20px;
+        background: rgba(255, 255, 255, 0.8);
+        padding: 10px;
+        border-radius: 5px;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="search-bar">
+      <strong>🔍 谱系搜索：</strong>
+      <input
+        type="text"
+        id="searchInput"
+        list="stdList"
+        placeholder="输入标准号，如 GB/T 1.1-2020"
+      />
+      <datalist id="stdList"></datalist>
+      <button onclick="handleSearch()">搜索谱系</button>
+    </div>
+
+    <div class="info" id="status">请在上方输入标准号开始搜索</div>
+    <div class="controls">
+      <button onclick="toggleOrient()">切换布局 (横向/纵向)</button>
+    </div>
+
+    <div id="main"></div>
+
+    <script>
+      const chartDom = document.getElementById("main");
+      const myChart = echarts.init(chartDom);
+      let currentOrient = "vertical";
+      let currentData = null;
+      let searchKey = "";
+
+      // 初始化建议
+      const stdList = document.getElementById("stdList");
+      Object.keys(STD_TO_PED)
+        .slice(0, 800)
+        .forEach((k) => {
+          const opt = document.createElement("option");
+          opt.value = k;
+          stdList.appendChild(opt);
+        });
+
+      function handleSearch() {
+        const val = document.getElementById("searchInput").value.trim();
+        if (!val) return;
+        searchKey = val;
+        const pedId = STD_TO_PED[val];
+        if (!pedId || !PED_CHAINS[pedId]) {
+          alert("未找到该标准的谱系数据。");
+          return;
+        }
+        try {
+          currentData = JSON.parse(PED_CHAINS[pedId]);
+          document.getElementById("status").innerHTML =
+            `当前展示家族：<b>${pedId}</b><br>包含标准数：${currentData.nodes.length}`;
+          renderChart();
+        } catch (e) {
+          alert("解析失败");
+        }
+      }
+
+      function calculateLayout(data, orient) {
+        const { nodes, edges } = data;
+        const levels = {};
+        const getLvl = (name) => {
+          if (levels[name] !== undefined) return levels[name];
+          const incoming = edges.filter((e) => e.target === name);
+          if (incoming.length === 0) return (levels[name] = 0);
+          return (levels[name] =
+            Math.max(...incoming.map((e) => getLvl(e.source))) + 1);
+        };
+        nodes.forEach(getLvl);
+
+        const levelGroups = {};
+        nodes.forEach((name) => {
+          const l = levels[name];
+          if (!levelGroups[l]) levelGroups[l] = [];
+          levelGroups[l].push(name);
+        });
+
+        const nodePositions = {};
+        const maxLevel = Math.max(...Object.values(levels));
+
+        // 逐层排序，减少交叉 (重心启发式算法)
+        for (let l = 0; l <= maxLevel; l++) {
+          const nodesInLevel = levelGroups[l];
+          if (l > 0) {
+            nodesInLevel.sort((a, b) => {
+              const getAvgParentX = (n) => {
+                const parents = edges
+                  .filter((e) => e.target === n)
+                  .map((e) => e.source);
+                if (parents.length === 0) return 0;
+                return (
+                  parents.reduce(
+                    (sum, p) => sum + (nodePositions[p]?.idx || 0),
+                    0,
+                  ) / parents.length
+                );
+              };
+              return getAvgParentX(a) - getAvgParentX(b);
+            });
+          }
+          nodesInLevel.forEach((name, idx) => {
+            nodePositions[name] = {
+              lvl: l,
+              idx: idx,
+              total: nodesInLevel.length,
+            };
+          });
+        }
+
+        return nodes.map((name) => {
+          const pos = nodePositions[name];
+          // 动态调整间距：节点越多间距越宽
+          const xGap = Math.max(220, pos.total * 30);
+          const x = (pos.idx - (pos.total - 1) / 2) * xGap;
+          const y = pos.lvl * 180;
+
+          return {
+            name: name,
+            x: orient === "vertical" ? x : y,
+            y: orient === "vertical" ? y : x,
+            itemStyle: {
+              color:
+                name === searchKey
+                  ? "#ffc53d"
+                  : pos.lvl >= 3
+                    ? "#ff4d4f"
+                    : "#b0846a",
+              borderColor: name === searchKey ? "#faad14" : "#fff",
+              borderWidth: 2,
+            },
+            symbolSize: 35,
+            label: {
+              show: true,
+              position: orient === "vertical" ? "top" : "right",
+              fontSize: 11,
+            },
+          };
+        });
+      }
+
+      function renderChart() {
+        if (!currentData) return;
+        const finalNodes = calculateLayout(currentData, currentOrient);
+        myChart.setOption(
+          {
+            series: [
+              {
+                type: "graph",
+                layout: "none",
+                coordinateSystem: "view",
+                data: finalNodes,
+                links: currentData.edges,
+                roam: true,
+                edgeSymbol: ["none", "arrow"],
+                edgeSymbolSize: [4, 8],
+                lineStyle: { color: "#d0c0b5", width: 2, curveness: 0.15 },
+                emphasis: { focus: "adjacency", lineStyle: { width: 4 } },
+              },
+            ],
+          },
+          true,
+        );
+      }
+
+      function toggleOrient() {
+        currentOrient =
+          currentOrient === "vertical" ? "horizontal" : "vertical";
+        renderChart();
+      }
+      window.addEventListener("resize", () => myChart.resize());
+    </script>
+  </body>
+</html>
