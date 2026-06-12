@@ -1,4 +1,5 @@
-import _path  # noqa: F401
+import _path
+from db_config import DB_CONFIG  # noqa: F401
 
 import pymysql
 import requests
@@ -8,14 +9,7 @@ import time
 import json
 
 # --- 配置区 ---
-DB_CONFIG = {
-    'host': '127.0.0.1',
-    'port': 3306,
-    'user': 'root',
-    'password': 'lsj223546',
-    'database': 'mydate',
-    'charset': 'utf8mb4'
-}
+
 
 BAIDU_APP_ID = "20260430002604998"
 BAIDU_SECRET_KEY = "MGC2o1ZfMIdl3qLmWm9t"

@@ -1,4 +1,5 @@
-import _path  # noqa: F401
+import _path
+from db_config import DB_CONFIG  # noqa: F401
 
 import pymysql
 import subprocess
@@ -7,14 +8,7 @@ import time
 from datetime import datetime
 
 # --- 配置区 ---
-DB_CONFIG = {
-    'host': '127.0.0.1',
-    'port': 3306,
-    'user': 'root',
-    'password': 'lsj223546',
-    'database': 'mydate',
-    'charset': 'utf8mb4'
-}
+
 
 # 脚本路径 (请确保这些文件在同一目录下)
 GEO_SCRIPT = 'api_match_area_code.py'

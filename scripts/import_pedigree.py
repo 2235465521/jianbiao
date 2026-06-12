@@ -1,18 +1,12 @@
-import _path  # noqa: F401
+import _path
+from db_config import DB_CONFIG  # noqa: F401
 
 import pymysql
 import pandas as pd
 import time
 import os
 
-DB_CONFIG = {
-    'host': '127.0.0.1',
-    'port': 3306,
-    'user': 'root',
-    'password': 'lsj223546',
-    'database': 'mydate',
-    'charset': 'utf8mb4'
-}
+
 
 def import_pedigree_data():
     conn = pymysql.connect(**DB_CONFIG)

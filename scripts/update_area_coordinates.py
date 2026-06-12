@@ -1,18 +1,12 @@
-import _path  # noqa: F401
+import _path
+from db_config import DB_CONFIG  # noqa: F401
 
 import pymysql
 import requests
 import time
 
 # --- 配置区 ---
-DB_CONFIG = {
-    'host': '127.0.0.1',
-    'port': 3306,
-    'user': 'root',
-    'password': 'lsj223546',
-    'database': 'mydate',
-    'charset': 'utf8mb4'
-}
+
 
 AMAP_API_KEY = "58aa831e6e3f6f9908c626eae6afc1ee"
 GEOCODE_API_URL = "https://restapi.amap.com/v3/geocode/geo"

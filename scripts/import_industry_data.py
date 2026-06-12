@@ -1,17 +1,12 @@
-import _path  # noqa: F401
+import _path
+from db_config import DB_CONFIG  # noqa: F401
 
 import os
 import pandas as pd
 import pymysql
 
 # 数据库配置
-db_config = {
-    'host': '127.0.0.1',
-    'user': 'root',
-    'password': 'lsj223546',
-    'database': 'mydate',
-    'charset': 'utf8mb4'
-}
+
 
 def format_tree_code(code, level):
     """根据层级对代码进行补零处理"""
@@ -40,7 +35,7 @@ def import_industry_data():
         return
 
     xl = pd.ExcelFile(path)
-    conn = pymysql.connect(**db_config)
+    conn = pymysql.connect(**DB_CONFIG)
     cursor = conn.cursor()
     
     try:

@@ -1,4 +1,5 @@
-import _path  # noqa: F401
+import _path
+from db_config import DB_CONFIG  # noqa: F401
 
 import os
 import pandas as pd
@@ -9,18 +10,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # 数据库配置
-db_config = {
-    'host': os.getenv('DB_HOST', '127.0.0.1'),
-    'port': int(os.getenv('DB_PORT', 3306)),
-    'user': os.getenv('DB_USER', 'root'),
-    'password': os.getenv('DB_PASSWORD', 'lsj223546'),
-    'database': os.getenv('DB_NAME', 'mydate'),
-    'charset': 'utf8mb4'
-}
+
 
 def setup_database():
     """创建详情表和更新视图"""
-    conn = pymysql.connect(**db_config)
+    conn = pymysql.connect(**DB_CONFIG)
     cursor = conn.cursor()
     try:
         # 1. 创建 std_iso_detail
@@ -89,7 +83,7 @@ def import_iso_data():
     df.columns = [str(c).strip() for c in df.columns]
     print(f"读取完成，共 {len(df)} 行数据。")
     
-    conn = pymysql.connect(**db_config)
+    conn = pymysql.connect(**DB_CONFIG)
     cursor = conn.cursor()
     
     success_count = 0

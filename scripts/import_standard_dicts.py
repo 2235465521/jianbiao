@@ -1,4 +1,5 @@
-import _path  # noqa: F401
+import _path
+from db_config import DB_CONFIG  # noqa: F401
 
 import os
 import glob
@@ -6,14 +7,7 @@ import pandas as pd
 import pymysql
 
 # 数据库配置 (从 .env 中读取到的值)
-db_config = {
-    'host': '127.0.0.1',
-    'user': 'root',
-    'password': 'lsj223546',
-    'database': 'mydate',
-    'charset': 'utf8mb4',
-    'cursorclass': pymysql.cursors.DictCursor
-}
+
 
 def get_excel_path():
     files = glob.glob(r'E:\Downloads\ics\*.xlsx')
@@ -116,7 +110,7 @@ if __name__ == "__main__":
     try:
         path = get_excel_path()
         print(f"找到文件: {path}")
-        connection = pymysql.connect(**db_config)
+        connection = pymysql.connect(**DB_CONFIG)
         try:
             import_ics(connection, path)
             import_ccs(connection, path)

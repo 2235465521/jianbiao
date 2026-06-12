@@ -1,17 +1,12 @@
-import _path  # noqa: F401
+import _path
+from db_config import DB_CONFIG  # noqa: F401
 
 import os
 import pandas as pd
 import pymysql
 
 # 数据库配置
-db_config = {
-    'host': '127.0.0.1',
-    'user': 'root',
-    'password': 'lsj223546',
-    'database': 'mydate',
-    'charset': 'utf8mb4'
-}
+
 
 def update_gb_names():
     path = r'E:\Downloads\国标\77239国标英文名称.xlsx'
@@ -22,7 +17,7 @@ def update_gb_names():
     print("正在读取 Excel 文件，请稍候...")
     df = pd.read_excel(path)
     
-    conn = pymysql.connect(**db_config)
+    conn = pymysql.connect(**DB_CONFIG)
     cursor = conn.cursor()
     
     try:

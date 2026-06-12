@@ -1,4 +1,5 @@
-import _path  # noqa: F401
+import _path
+from db_config import DB_CONFIG  # noqa: F401
 
 import json
 import pymysql
@@ -27,14 +28,7 @@ with open(json_path, 'r', encoding='utf-8') as f:
     data = json.load(f)
 
 # 连接数据库 (根据你的 .env 配置)
-conn = pymysql.connect(
-    host='127.0.0.1',
-    port=3306,
-    user='root',
-    password='lsj223546', # 替换为你的数据库密码
-    database='mydate',
-    charset='utf8mb4'
-)
+conn = pymysql.connect(**DB_CONFIG)
 cursor = conn.cursor()
 
 records = []

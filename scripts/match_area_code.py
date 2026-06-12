@@ -1,17 +1,11 @@
-import _path  # noqa: F401
+import _path
+from db_config import DB_CONFIG  # noqa: F401
 
 import pymysql
 import re
 import time
 
-DB_CONFIG = {
-    'host': '127.0.0.1',
-    'port': 3306,
-    'user': 'root',
-    'password': 'lsj223546',
-    'database': 'mydate',
-    'charset': 'utf8mb4'
-}
+
 
 def clean_area_name(name):
     """去除行政区划名称的常见后缀，提取核心地名"""
