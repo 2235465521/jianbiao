@@ -1405,10 +1405,21 @@ with tab_import:
                                 for rep in reps:
                                     rep = str(rep).strip()
                                     if not rep: continue
-                                    clean_rep = clean_id(rep)
+                                    # 自动剥离 "全部代替"、"部分代替"、"代替" 等前缀修饰词（兼容有无冒号），保留纯净标准号以匹配在库数据
+                                    clean_rep_name = re.sub(r'^(全部代替|部分代替|代替|废止|废止并代替|替代)\s*[:：]?\s*', '', rep)
+                                    clean_rep = clean_id(clean_rep_name)
                                     rep_id = id_map.get(clean_rep)
+                                    
+                                    # 自动从前缀词推断关系类型（若 Excel 没提供单独类型列）
+                                    detected_type = replace_type
+                                    if not detected_type:
+                                        if '全部代替' in rep:
+                                            detected_type = '全部代替'
+                                        elif '部分代替' in rep:
+                                            detected_type = '部分代替'
+                                            
                                     cursor.execute("INSERT IGNORE INTO std_replace (base_id, replace_id, replace_std_name, replace_type) VALUES (%s, %s, %s, %s)", 
-                                                   (base_id, rep_id, rep, replace_type))
+                                                   (base_id, rep_id, clean_rep_name, detected_type))
                                     if rep_id:
                                         replaced_ids.append(rep_id)
                                     
