@@ -1047,7 +1047,13 @@ def render_scan_panel():
                         st.caption("以下文件无法匹配到数据库中的标准。请检查文件名的标准号书写规范。")
                         unmatched_logs = [line for line in result['log_lines'] if "[UNMATCHED]" in line or "[ERROR]" in line or "[WARN]" in line]
                         if unmatched_logs:
-                            st.code("\n".join(unmatched_logs), language="text")
+                            limit = 1000
+                            if len(unmatched_logs) > limit:
+                                st.warning(f"⚠️ 未匹配/异常文件较多（共 {len(unmatched_logs)} 条），网页端仅展示前 {limit} 条。完整日志请查看服务器项目根目录下的 `{result['log_file']}` 文件。")
+                                display_logs = unmatched_logs[:limit]
+                            else:
+                                display_logs = unmatched_logs
+                            st.code("\n".join(display_logs), language="text")
                         else:
                             st.write("没有具体的未匹配日志。")
                 
