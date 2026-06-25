@@ -986,6 +986,74 @@ def render_verify_panel():
                     else:
                         st.error("未在 std_base 中找到该标准号。")
 
+def render_scan_panel():
+    from scripts.scan_and_import_filepath import SCAN_DIRS, run_scan_and_import
+    
+    with st.container(border=True):
+        st.markdown('<p class="card-title">物理文件扫描匹配</p>', unsafe_allow_html=True)
+        st.caption(
+            "自动扫描磁盘阵列中各个子文件夹（国标、行标、地标、团标）下的 PDF 文件，"
+            "并利用二级匹配算法将其关联到数据库中已存在的标准元数据上。"
+        )
+        
+        # 显示当前配置路径
+        st.markdown("##### 🔍 扫描配置")
+        conf_cols = st.columns(2)
+        conf_cols[0].markdown(f"**根目录 (PDF_ROOT)**: `{PDF_ROOT}`")
+        conf_cols[1].markdown(f"**子目录 (PDF_SUBDIR)**: `{PDF_SUBDIR or '（无）'}`")
+        
+        with st.expander("查看待扫描的各类别文件夹路径", expanded=False):
+            for k, v in SCAN_DIRS.items():
+                st.markdown(f"- **{k}**: `{v}`")
+        
+        # 扫描参数
+        st.markdown("##### ⚙️ 扫描参数")
+        only_missing = st.checkbox(
+            "仅扫描无关联文件路径的标准 (增量扫描)",
+            value=True,
+            help="开启后，已拥有物理文件关联记录的标准将被跳过，能显著减少不必要的文件读取和匹配工作，极大提升速度。"
+        )
+        
+        run_scan = st.button("⚡ 开始扫描并匹配关联", type="primary", use_container_width=True, key="run_physical_scan")
+        
+    if run_scan:
+        status_placeholder = st.empty()
+        
+        logs = []
+        def log_cb(msg):
+            logs.append(msg)
+            # 在 Streamlit 中实时显示最新的状态
+            status_placeholder.text(f"🕒 {msg}")
+            
+        with st.spinner("正在扫描并匹配关联中，请稍候..."):
+            start_time = time.time()
+            try:
+                result = run_scan_and_import(only_missing_paths=only_missing, status_callback=log_cb)
+                elapsed = time.time() - start_time
+                
+                status_placeholder.empty()
+                st.balloons()
+                st.success(f"🎉 文件扫描与关联匹配顺利完成！耗时: {elapsed:.2f} 秒")
+                
+                # 指标展示
+                m1, m2, m3 = st.columns(3)
+                m1.metric("匹配成功文件", f"{result['scanned_matched']} 个", help="扫描到的、且成功匹配到库中标准号的 PDF 文件数")
+                m2.metric("实际新增写入", f"{result['inserted']} 条", help="排除数据库中已有重复记录后，新写入 std_filepath 的记录数")
+                m3.metric("未匹配/异常文件", f"{result['unmatched']} 个", help="无法识别或在数据库中未找到对应标准号的文件数")
+                
+                # 展示未匹配日志
+                if result['unmatched'] > 0:
+                    with st.expander(f"查看未匹配或异常文件列表 ({result['unmatched']})", expanded=False):
+                        st.caption("以下文件无法匹配到数据库中的标准。请检查文件名的标准号书写规范。")
+                        unmatched_logs = [line for line in result['log_lines'] if "[UNMATCHED]" in line or "[ERROR]" in line or "[WARN]" in line]
+                        if unmatched_logs:
+                            st.code("\n".join(unmatched_logs), language="text")
+                        else:
+                            st.write("没有具体的未匹配日志。")
+                
+            except Exception as e:
+                st.error(f"❌ 扫描过程中发生严重错误: {str(e)}")
+
 
 # --- UI 页面配置 ---
 st.set_page_config(
@@ -1082,10 +1150,13 @@ if st.sidebar.button("检测是否已入库", use_container_width=True, key="sid
             else:
                 st.sidebar.caption(f"PDF: {pdf_status_label(payload.get('pdfs') or [])}")
 
-tab_import, tab_verify = st.tabs(["数据导入", "入库核验"])
+tab_import, tab_verify, tab_scan = st.tabs(["数据导入", "入库核验", "物理文件扫描"])
 
 with tab_verify:
     render_verify_panel()
+
+with tab_scan:
+    render_scan_panel()
 
 with tab_import:
     with st.container(border=True):

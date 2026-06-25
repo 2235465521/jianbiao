@@ -6,7 +6,10 @@
 2. 预编译正则表达式 (提升 CPU 处理速度)
 3. 建立 O(1) 前缀映射字典，消除 for 循环暴力匹配 (解决假死问题)
 """
-import _path  # noqa: F401
+try:
+    import _path  # noqa: F401
+except ImportError:
+    pass
 
 import os
 import re
@@ -89,10 +92,20 @@ def extract_tb_name(filename):
 # ============================
 # 加载数据库与建立高速索引
 # ============================
-def load_std_index(conn):
+def load_std_index(conn, only_missing_paths=False):
     cursor = conn.cursor()
     # 排序以确保如果标准有多个年份，我们优先处理一个（虽然 fallback 只存一个，但这样更稳定）
-    cursor.execute("SELECT id, std_id FROM std_base ORDER BY id DESC")
+    if only_missing_paths:
+        cursor.execute("""
+            SELECT id, std_id FROM std_base 
+            WHERE id NOT IN (
+                SELECT DISTINCT base_id FROM std_filepath 
+                WHERE file_path IS NOT NULL AND file_path != ''
+            )
+            ORDER BY id DESC
+        """)
+    else:
+        cursor.execute("SELECT id, std_id FROM std_base ORDER BY id DESC")
     
     id_map = {}
     fallback_map = {} # O(1) 高速前缀映射
@@ -114,11 +127,22 @@ def load_std_index(conn):
                     fallback_map[prefix_key] = db_id
 
     # 团标名称索引
-    cursor.execute("SELECT id, std_chinesename FROM std_base WHERE std_type_no = '03' AND std_chinesename IS NOT NULL")
+    if only_missing_paths:
+        cursor.execute("""
+            SELECT id, std_chinesename FROM std_base 
+            WHERE std_type_no = '03' AND std_chinesename IS NOT NULL
+            AND id NOT IN (
+                SELECT DISTINCT base_id FROM std_filepath 
+                WHERE file_path IS NOT NULL AND file_path != ''
+            )
+        """)
+    else:
+        cursor.execute("SELECT id, std_chinesename FROM std_base WHERE std_type_no = '03' AND std_chinesename IS NOT NULL")
     name_map = {row[1].strip(): row[0] for row in cursor.fetchall()}
     cursor.close()
     
     return id_map, fallback_map, name_map
+
 
 # ============================
 # 极速扫描单个目录 (os.scandir)
@@ -172,10 +196,11 @@ def scan_directory(scan_type, dir_path, id_map, fallback_map, name_map, log_line
 
     return records
 
+
 # ============================
 # 批量写入数据库
 # ============================
-def bulk_insert(conn, records):
+def bulk_insert(conn, records, status_callback=None):
     cursor = conn.cursor()
     sql = """
     INSERT IGNORE INTO std_filepath (base_id, file_path, file_name, file_size)
@@ -187,31 +212,49 @@ def bulk_insert(conn, records):
         cursor.executemany(sql, batch)
         conn.commit()
         inserted += cursor.rowcount
-        print(f"  已入库 {min(i + BATCH_SIZE, len(records))} / {len(records)}...")
+        msg = f"  已入库 {min(i + BATCH_SIZE, len(records))} / {len(records)}..."
+        print(msg)
+        if status_callback:
+            status_callback(msg)
     cursor.close()
     return inserted
 
+
 # ============================
-# 主流程
+# 外部调用接口 (支持增量扫描 & 状态回调)
 # ============================
-def main():
+def run_scan_and_import(only_missing_paths=False, status_callback=None):
     log_lines = []
     all_records = []
 
-    print("正在连接数据库并构建高速索引字典...")
+    if status_callback:
+        status_callback("正在连接数据库并构建高速索引字典...")
     conn = pymysql.connect(**DB_CONFIG)
-    id_map, fallback_map, name_map = load_std_index(conn)
-    print(f"索引构建完成：精确映射 {len(id_map)} 条，前缀回退映射 {len(fallback_map)} 条，团标名称 {len(name_map)} 条。")
+    id_map, fallback_map, name_map = load_std_index(conn, only_missing_paths=only_missing_paths)
+    msg = f"索引构建完成：精确映射 {len(id_map)} 条，前缀回退映射 {len(fallback_map)} 条，团标名称 {len(name_map)} 条。"
+    print(msg)
+    if status_callback:
+        status_callback(msg)
 
     for scan_type, dir_path in SCAN_DIRS.items():
-        print(f"\n[{scan_type}] 正在极速扫描: {dir_path}")
+        msg = f"[{scan_type}] 正在极速扫描: {dir_path}"
+        print(msg)
+        if status_callback:
+            status_callback(msg)
         records = scan_directory(scan_type, dir_path, id_map, fallback_map, name_map, log_lines)
-        print(f"  -> 扫描完毕，匹配成功: {len(records)} 条")
+        msg = f"  -> 扫描完毕，匹配成功: {len(records)} 条"
+        print(msg)
+        if status_callback:
+            status_callback(msg)
         all_records.extend(records)
 
-    print(f"\n共匹配成功 {len(all_records)} 条，未匹配 {len(log_lines)} 条，开始批量写入 (Batch Size: {BATCH_SIZE})...")
+    msg = f"共匹配成功 {len(all_records)} 条，未匹配 {len(log_lines)} 条，开始批量写入 (Batch Size: {BATCH_SIZE})..."
+    print(msg)
+    if status_callback:
+        status_callback(msg)
+
     if all_records:
-        total_inserted = bulk_insert(conn, all_records)
+        total_inserted = bulk_insert(conn, all_records, status_callback=status_callback)
     else:
         total_inserted = 0
     conn.close()
@@ -222,10 +265,25 @@ def main():
         f.write(f"未匹配文件数: {len(log_lines)}\n\n")
         f.write('\n'.join(log_lines))
 
+    return {
+        "scanned_matched": len(all_records),
+        "inserted": total_inserted,
+        "unmatched": len(log_lines),
+        "log_file": LOG_FILE,
+        "log_lines": log_lines
+    }
+
+
+# ============================
+# 主流程
+# ============================
+def main():
+    print("开始执行全量物理文件扫描入库...")
+    res = run_scan_and_import(only_missing_paths=False, status_callback=None)
     print(f"\n[DONE] 极速入库完成！")
-    print(f"  - 匹配成功: {len(all_records)} 条")
-    print(f"  - 实际入库: {total_inserted} 条")
-    print(f"  - 未匹配: {len(log_lines)} 条（详见 {LOG_FILE}）")
+    print(f"  - 匹配成功: {res['scanned_matched']} 条")
+    print(f"  - 实际入库: {res['inserted']} 条")
+    print(f"  - 未匹配: {res['unmatched']} 条（详见 {res['log_file']}）")
 
 if __name__ == '__main__':
     main()
