@@ -90,22 +90,13 @@ def extract_tb_name(filename):
     return name.strip()
 
 # ============================
+# ============================
 # 加载数据库与建立高速索引
 # ============================
-def load_std_index(conn, only_missing_paths=False):
+def load_std_index(conn):
     cursor = conn.cursor()
     # 排序以确保如果标准有多个年份，我们优先处理一个（虽然 fallback 只存一个，但这样更稳定）
-    if only_missing_paths:
-        cursor.execute("""
-            SELECT id, std_id FROM std_base 
-            WHERE id NOT IN (
-                SELECT DISTINCT base_id FROM std_filepath 
-                WHERE file_path IS NOT NULL AND file_path != ''
-            )
-            ORDER BY id DESC
-        """)
-    else:
-        cursor.execute("SELECT id, std_id FROM std_base ORDER BY id DESC")
+    cursor.execute("SELECT id, std_id FROM std_base ORDER BY id DESC")
     
     id_map = {}
     fallback_map = {} # O(1) 高速前缀映射
@@ -127,32 +118,31 @@ def load_std_index(conn, only_missing_paths=False):
                     fallback_map[prefix_key] = db_id
 
     # 团标名称索引
-    if only_missing_paths:
-        cursor.execute("""
-            SELECT id, std_chinesename FROM std_base 
-            WHERE std_type_no = '03' AND std_chinesename IS NOT NULL
-            AND id NOT IN (
-                SELECT DISTINCT base_id FROM std_filepath 
-                WHERE file_path IS NOT NULL AND file_path != ''
-            )
-        """)
-    else:
-        cursor.execute("SELECT id, std_chinesename FROM std_base WHERE std_type_no = '03' AND std_chinesename IS NOT NULL")
+    cursor.execute("SELECT id, std_chinesename FROM std_base WHERE std_type_no = '03' AND std_chinesename IS NOT NULL")
     name_map = {row[1].strip(): row[0] for row in cursor.fetchall()}
     cursor.close()
     
     return id_map, fallback_map, name_map
 
 
+def load_already_associated_ids(conn):
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT base_id FROM std_filepath WHERE file_path IS NOT NULL AND file_path != ''")
+    associated = {row[0] for row in cursor.fetchall()}
+    cursor.close()
+    return associated
+
+
 # ============================
 # 极速扫描单个目录 (os.scandir)
 # ============================
-def scan_directory(scan_type, dir_path, id_map, fallback_map, name_map, log_lines):
+def scan_directory(scan_type, dir_path, id_map, fallback_map, name_map, log_lines, only_missing_paths=False, associated_ids=None):
     records = []
     if not os.path.exists(dir_path):
         log_lines.append(f"[WARN] 目录不存在: {dir_path}")
         return records
 
+    associated_ids = associated_ids or set()
     # 使用 os.scandir 替代 os.listdir，极大降低网络 I/O
     try:
         with os.scandir(dir_path) as it:
@@ -187,6 +177,9 @@ def scan_directory(scan_type, dir_path, id_map, fallback_map, name_map, log_line
                             match_key = "None"
 
                     if base_id:
+                        if only_missing_paths and base_id in associated_ids:
+                            # 增量扫描下，如果已经有物理文件关联记录，直接静默跳过该文件即可
+                            continue
                         records.append((base_id, rel_path, fname, file_size))
                     else:
                         log_lines.append(f"[UNMATCHED][{scan_type}] key='{match_key}' | file={fname}")
@@ -230,7 +223,14 @@ def run_scan_and_import(only_missing_paths=False, status_callback=None):
     if status_callback:
         status_callback("正在连接数据库并构建高速索引字典...")
     conn = pymysql.connect(**DB_CONFIG)
-    id_map, fallback_map, name_map = load_std_index(conn, only_missing_paths=only_missing_paths)
+    id_map, fallback_map, name_map = load_std_index(conn)
+    
+    associated_ids = set()
+    if only_missing_paths:
+        if status_callback:
+            status_callback("正在读取库中已存在关联的路径记录...")
+        associated_ids = load_already_associated_ids(conn)
+        
     msg = f"索引构建完成：精确映射 {len(id_map)} 条，前缀回退映射 {len(fallback_map)} 条，团标名称 {len(name_map)} 条。"
     print(msg)
     if status_callback:
@@ -241,7 +241,16 @@ def run_scan_and_import(only_missing_paths=False, status_callback=None):
         print(msg)
         if status_callback:
             status_callback(msg)
-        records = scan_directory(scan_type, dir_path, id_map, fallback_map, name_map, log_lines)
+        records = scan_directory(
+            scan_type, 
+            dir_path, 
+            id_map, 
+            fallback_map, 
+            name_map, 
+            log_lines, 
+            only_missing_paths=only_missing_paths, 
+            associated_ids=associated_ids
+        )
         msg = f"  -> 扫描完毕，匹配成功: {len(records)} 条"
         print(msg)
         if status_callback:
